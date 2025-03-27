@@ -58,17 +58,17 @@ class DETR(nn.Module):
         """
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
-        features, pos = self.backbone(samples)
+        features, pos = self.backbone(samples) #samples.tensors.shape:torch.Size([2, 3, 768, 1151]) samples.mask.shape: torch.Size([2, 768, 1151]) pos[-1]:torch.Size([2, 256, 23, 31])
 
-        src, mask = features[-1].decompose()
+        src, mask = features[-1].decompose() #src: torch.Size([2, 2048, 23, 31]) mask: torch.Size([2, 23, 31])
         assert mask is not None
-        hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
-
-        outputs_class = self.class_embed(hs)
-        outputs_coord = self.bbox_embed(hs).sigmoid()
+        hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0] #self.input_proj(src) 做了一次维度变换
+        #hs: torch.Size([6, 2, 100, 256])
+        outputs_class = self.class_embed(hs) #output_class:torch.Size([6, 2, 100, 92])
+        outputs_coord = self.bbox_embed(hs).sigmoid() #outputs_coord: torch.Size([6, 2, 100, 4])
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
         if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord) #辅助的loss
         return out
 
     @torch.jit.unused
@@ -112,13 +112,24 @@ class SetCriterion(nn.Module):
         assert 'pred_logits' in outputs
         src_logits = outputs['pred_logits']
 
-        idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+        idx = self._get_src_permutation_idx(indices) #返回原索引所在的批次，以及拼接原索引的序号
+        #indices: [(tensor([ 0, 12]), tensor([1, 0])), (tensor([ 2, 21, 44, 66]), tensor([3, 1, 0, 2]))]
+        #idx: (tensor([0, 0, 1, 1, 1, 1]), tensor([ 0, 12,  2, 21, 44, 66]))
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)]) #取出匹配到的目标的标签
         target_classes = torch.full(src_logits.shape[:2], self.num_classes,
-                                    dtype=torch.int64, device=src_logits.device)
+                                    dtype=torch.int64, device=src_logits.device) #变换src_logits的维度，之前为[2,100,92]变换为[2,100],并全部填充为self.num_classes  
         target_classes[idx] = target_classes_o
-
+        #这个操作的目的是通过索引 idx 将 target_classes_o 中的实际目标类别标签更新到 target_classes 张量中的相应位置。
+        #idx:
+        #(tensor([0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1]), tensor([ 3,  4, 16, 27, 37, 79, 26, 33, 35, 40, 73]))
+        #target_classes_o:
+        #tensor([84, 72, 44, 72, 84, 76,  4,  1,  1,  1,  1], device='cuda:0')
+        #操作后 target_classes[0][3] = 84 依次类推，相当于一个真值矩阵
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
+        #src_logits.transpose(1,2) torch.Size([2, 92, 100])
+        #target_classes: torch.Size([2, 100]) 里面的值都是0~92
+        #计算的时候是：假如target_classes[0][0] = 2 则选出src_logits[0][0]中第2个元素 a 得到 -loga 所有的相加即可。
+        #这种方法可以让src_logits[0][0]中第2个元素 逼近1，其他的逼近0。预测的时候src_logits[0][0]中最大的值对应的索引就是预测的类别，即是第2个元素。
         losses = {'loss_ce': loss_ce}
 
         if log:

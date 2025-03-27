@@ -53,7 +53,15 @@ class Transformer(nn.Module):
         mask = mask.flatten(1)
 
         tgt = torch.zeros_like(query_embed)
-        memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
+        #src: torch.Size([713, 2, 256]) (H*W, B, D)
+        #mask: torch.Size([2, 713])
+        #pos_embed: torch.Size([713, 2, 256])
+        memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed) #memory: torch.Size([864, 2, 256])
+        #tgt: torch.Size([100, 2, 256])
+        #memory: torch.Size([864, 2, 256])
+        #mask: torch.Size([2, 864])
+        #pos_embed: torch.Size([864, 2, 256])
+        #query_embed: torch.Size([100, 2, 256])
         hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
                           pos=pos_embed, query_pos=query_embed)
         return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)

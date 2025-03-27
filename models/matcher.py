@@ -59,8 +59,8 @@ class HungarianMatcher(nn.Module):
         out_bbox = outputs["pred_boxes"].flatten(0, 1)  # [batch_size * num_queries, 4]
 
         # Also concat the target labels and boxes
-        tgt_ids = torch.cat([v["labels"] for v in targets])
-        tgt_bbox = torch.cat([v["boxes"] for v in targets])
+        tgt_ids = torch.cat([v["labels"] for v in targets]) #torch.Size([36(物体数量)]) 
+        tgt_bbox = torch.cat([v["boxes"] for v in targets]) #torch.Size([36(物体数量), 4])
 
         # Compute the classification cost. Contrary to the loss, we don't use the NLL,
         # but approximate it in 1 - proba[target class].
@@ -74,13 +74,15 @@ class HungarianMatcher(nn.Module):
         cost_giou = -generalized_box_iou(box_cxcywh_to_xyxy(out_bbox), box_cxcywh_to_xyxy(tgt_bbox))
 
         # Final cost matrix
-        C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
-        C = C.view(bs, num_queries, -1).cpu()
+        C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou # #torch.Size([200, 36])
+        C = C.view(bs, num_queries, -1).cpu() ##torch.Size([2, 100, 36])
 
-        sizes = [len(v["boxes"]) for v in targets]
+        sizes = [len(v["boxes"]) for v in targets] # #sizes： [28, 8] 分别表示每一个batch每个样本物体的数量
         indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
-
+        #C.split(sizes, -1)) 是torch.Size([2, 100, 28]) 和 torch.Size([2, 100, 8]) 
+        #c[i] 取到的是 [2,100,28]的第1个和[2, 100, 8]的第2个元素，维度分别为[100,28], [100, 8], 第一个batch对应的是28个物体，第二个batch对应的是8个物体
+        #indices 有两个元素，第一个元素是28*28，第2个元素是8*8，表示匹配关系
 
 def build_matcher(args):
     return HungarianMatcher(cost_class=args.set_cost_class, cost_bbox=args.set_cost_bbox, cost_giou=args.set_cost_giou)

@@ -102,9 +102,9 @@ class Joiner(nn.Sequential):
         out: List[NestedTensor] = []
         pos = []
         for name, x in xs.items():
-            out.append(x)
+            out.append(x) #x.tensors: torch.Size([2, 2048, 24, 36])
             # position encoding
-            pos.append(self[1](x).to(x.tensors.dtype))
+            pos.append(self[1](x).to(x.tensors.dtype)) #self[1](x).to(x.tensors.dtype): torch.Size([2, 256, 24, 36])
 
         return out, pos
 
